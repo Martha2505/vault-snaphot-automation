@@ -1,38 +1,31 @@
-name: Vault Hourly Snapshot to Azure
+name: Vault Snapshot Upload
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # Every hour
-  workflow_dispatch:      # Allow manual trigger too
+  workflow_dispatch: # you can trigger manually
 
 jobs:
-  snapshot:
+  snapshot-and-upload:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (not strictly needed unless you use repo files)
         uses: actions/checkout@v3
 
-      - name: Install curl
-        run: sudo apt-get update && sudo apt-get install -y curl
+      - name: Set timestamp
+        id: timestamp
+        run: echo "value=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
 
-      - name: Take Vault snapshot and upload to Azure
-        env:
-          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
-          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
-          AZURE_SAS_TOKEN: ${{ secrets.AZURE_SAS_TOKEN }}
+      - name: Download Vault snapshot
         run: |
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          SNAPSHOT_NAME="vault-snapshot-$TIMESTAMP.snap"
+          curl --header "X-Vault-Token: ${{ secrets.VAULT_TOKEN }}" \
+               https://your-vault-address/v1/sys/storage/raft/snapshot \
+               --output snapshot.snap
 
-          curl \
-            --header "X-Vault-Token: $VAULT_TOKEN" \
-            --request GET \
-            --output $SNAPSHOT_NAME \
-            $VAULT_ADDR/v1/sys/storage/raft/snapshot
-
-          echo "Uploading to Azure Blob Storage..."
-          curl -X PUT -T "$SNAPSHOT_NAME" \
-            "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_CONTAINER_NAME}/$SNAPSHOT_NAME${AZURE_SAS_TOKEN}"
+      - name: Upload snapshot to Azure Blob using Azure CLI
+        run: |
+          az storage blob upload \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --container-name ${{ secrets.AZURE_BLOB_CONTAINER }} \
+            --name snapshot-${{ steps.timestamp.outputs.value }}.snap \
+            --file snapshot.snap \
+            --sas-token "${{ secrets.AZURE_SAS_TOKEN }}"
