@@ -1,14 +1,14 @@
 name: Vault Snapshot Upload
 
 on:
-  workflow_dispatch: # you can trigger manually
+  workflow_dispatch:
 
 jobs:
-  snapshot-and-upload:
+  upload-snapshot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (not strictly needed unless you use repo files)
+      - name: Checkout (optional)
         uses: actions/checkout@v3
 
       - name: Set timestamp
@@ -18,14 +18,19 @@ jobs:
       - name: Download Vault snapshot
         run: |
           curl --header "X-Vault-Token: ${{ secrets.VAULT_TOKEN }}" \
-               https://your-vault-address/v1/sys/storage/raft/snapshot \
+               https://your-vault-url/v1/sys/storage/raft/snapshot \
                --output snapshot.snap
 
-      - name: Upload snapshot to Azure Blob using Azure CLI
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Upload to Blob with Azure CLI
         run: |
           az storage blob upload \
-            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
-            --container-name ${{ secrets.AZURE_BLOB_CONTAINER }} \
+            --account-name mystorageaccount \
+            --container-name vault-snapshots \
             --name snapshot-${{ steps.timestamp.outputs.value }}.snap \
             --file snapshot.snap \
-            --sas-token "${{ secrets.AZURE_SAS_TOKEN }}"
+            --auth-mode login
