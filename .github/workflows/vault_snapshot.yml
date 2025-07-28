@@ -1,35 +1,46 @@
-name: Upload Vault Snapshot to Azure Blob
+name: Vault Snapshot to Azure
 
 on:
+  schedule:
+    - cron: '0 * * * *'  # Runs every hour
   workflow_dispatch:
 
 jobs:
-  upload:
+  vault-snapshot:
     runs-on: ubuntu-latest
 
+    env:
+      VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-    - name: Install Azure CLI
-      uses: azure/setup-azure@v1
+      - name: Login to Azure using Service Principal
+        run: |
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant "${{ secrets.AZURE_TENANT_ID }}"
 
-    - name: Login to Azure with Service Principal
-      run: |
-        az login --service-principal \
-          --username "$AZURE_CLIENT_ID" \
-          --password "$AZURE_CLIENT_SECRET" \
-          --tenant "$AZURE_TENANT_ID"
+      - name: Set subscription
+        run: |
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
 
-    - name: Create dummy vault snapshot
-      run: |
-        echo "Vault snapshot at $(date)" > vault.snap
+      - name: Create Vault snapshot
+        run: |
+          TIMESTAMP=$(date +"%Y-%m-%d-%H-%M")
+          SNAPSHOT_FILE="vault-$TIMESTAMP.snap"
+          vault operator raft snapshot save $SNAPSHOT_FILE
+          echo "SNAPSHOT_FILE=$SNAPSHOT_FILE" >> $GITHUB_ENV
 
-    - name: Upload to Azure Blob Storage
-      run: |
-        az storage blob upload \
-          --account-name "$AZURE_STORAGE_ACCOUNT" \
-          --container-name "$AZURE_CONTAINER_NAME" \
-          --name vault-$(date +%Y%m%d%H%M).snap \
-          --file vault.snap \
-          --auth-mode login
+      - name: Upload snapshot to Azure Blob Storage
+        run: |
+          az storage blob upload \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
+            --container-name "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
+            --name "$SNAPSHOT_FILE" \
+            --file "$SNAPSHOT_FILE" \
+            --auth-mode login
+
