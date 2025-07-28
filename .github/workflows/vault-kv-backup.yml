@@ -1,0 +1,73 @@
+name: Vault KV Backup to Azure
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs every hour
+  workflow_dispatch:
+
+env:
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+  VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+  STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  STORAGE_CONTAINER_NAME: ${{ secrets.AZURE_STORAGE_CONTAINER }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Azure CLI
+      uses: azure/login@v1
+      with:
+        creds: |
+          {
+            "clientId": "${{ env.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ env.AZURE_CLIENT_SECRET }}",
+            "subscriptionId": "${{ env.AZURE_SUBSCRIPTION_ID }}",
+            "tenantId": "${{ env.AZURE_TENANT_ID }}"
+          }
+
+    - name: Install Vault and jq
+      run: |
+        curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+        sudo apt update && sudo apt install -y vault jq
+
+    - name: Extract secrets and upload backup
+      run: |
+        set -e
+        TIMESTAMP=$(date +"%Y-%m-%d-%H-%M")
+        BACKUP_FILE="vault-backup-$TIMESTAMP.json"
+
+        echo "Logging into Vault"
+        vault login "$VAULT_TOKEN"
+
+        echo "Listing secrets under 'secret/' path"
+        SECRET_KEYS=$(vault kv list -format=json secret/ | jq -r '.[]')
+
+        echo "{" > $BACKUP_FILE
+        for key in $SECRET_KEYS; do
+          echo "Fetching secret: $key"
+          SECRET_DATA=$(vault kv get -format=json secret/$key | jq -c '.data.data')
+          echo "\"$key\": $SECRET_DATA," >> $BACKUP_FILE
+        done
+        sed -i '$ s/,$//' $BACKUP_FILE
+        echo "}" >> $BACKUP_FILE
+
+        echo "Uploading $BACKUP_FILE to Azure Blob Storage"
+        az storage blob upload \
+          --account-name "$AZURE_STORAGE_ACCOUNT" \
+          --container-name "$AZURE_STORAGE_CONTAINER" \
+          --name "$BACKUP_FILE" \
+          --file "$BACKUP_FILE" \
+          --auth-mode login
+
+        echo "Backup complete. Cleaning up local file."
+        rm "$BACKUP_FILE"
