@@ -13,8 +13,8 @@ jobs:
     env:
       VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
-      STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
-      STORAGE_CONTAINER_NAME: ${{ secrets.STORAGE_CONTAINER_NAME }}
+      STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+      STORAGE_CONTAINER_NAME: ${{ secrets.AZURE_STORAGE_CONTAINER }}
       STORAGE_BLOB_NAME_PREFIX: "vault-snapshot"
 
     steps:
