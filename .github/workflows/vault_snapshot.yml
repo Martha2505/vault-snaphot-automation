@@ -18,7 +18,7 @@ jobs:
       - name: Download Vault snapshot
         run: |
           curl --header "X-Vault-Token: ${{ secrets.VAULT_TOKEN }}" \
-               https://your-vault-url/v1/sys/storage/raft/snapshot \
+               https://vault-cluster-http-vault-8348053f.j.cloud.hashicorp.com//v1/sys/storage/raft/snapshot \
                --output snapshot.snap
 
       - name: Login to Azure
